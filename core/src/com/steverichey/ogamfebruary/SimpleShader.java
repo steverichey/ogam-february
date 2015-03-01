@@ -68,5 +68,5 @@ public class SimpleShader implements Shader {
     }
 
     private final String PROJ_TRANS = "u_projTrans";
-    private final String WORLD_TRANS = "u_projTrans";
+    private final String WORLD_TRANS = "u_worldTrans";
 }
