@@ -3,6 +3,7 @@ package com.steverichey.ogamfebruary;
 import com.badlogic.gdx.ApplicationAdapter;
 import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.VertexAttributes.Usage;
@@ -11,6 +12,7 @@ import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.Shader;
+import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.utils.Array;
@@ -41,9 +43,11 @@ public class GameClass extends ApplicationAdapter implements ApplicationListener
         ModelBuilder modelBuilder = new ModelBuilder();
         model = modelBuilder.createSphere(2f, 2f, 2f, 20, 20, new Material(), Usage.Position | Usage.Normal | Usage.TextureCoordinates);
 
-        for (int x = -5; x <= 5; x += 2) {
-            for (int z = -5; z <= 5; z += 2) {
+        for (int x = -NUM_SPHERES; x <= NUM_SPHERES; x += 2) {
+            for (int z = -NUM_SPHERES; z <= NUM_SPHERES; z += 2) {
                 ModelInstance modelInstance = new ModelInstance(model, x, 0, z);
+                ColorAttribute colorAttribute = ColorAttribute.createDiffuse((x + 5f) / 10f, (z + 5f) / 10f, 0, 1);
+                modelInstance.materials.get(0).set(colorAttribute);
                 instances.add(modelInstance);
             }
         }
@@ -80,4 +84,6 @@ public class GameClass extends ApplicationAdapter implements ApplicationListener
     @Override public void resume () {}
     @Override public void resize (int width, int height) {}
     @Override public void pause () {}
+
+    private static final int NUM_SPHERES = 10;
 }
