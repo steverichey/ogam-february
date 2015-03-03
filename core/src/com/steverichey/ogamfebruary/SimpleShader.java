@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.g3d.Attribute;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.Renderable;
 import com.badlogic.gdx.graphics.g3d.Shader;
@@ -17,7 +18,8 @@ public class SimpleShader implements Shader {
     private RenderContext renderContext;
     private int u_projTrans;
     private int u_worldTrans;
-    private int u_color;
+    private int u_colorU;
+    private int u_colorV;
 
     @Override
     public void init() {
@@ -31,7 +33,8 @@ public class SimpleShader implements Shader {
 
         u_projTrans = shaderProgram.getUniformLocation(UNIFORM_PROJ);
         u_worldTrans = shaderProgram.getUniformLocation(UNIFORM_WORLD);
-        u_color = shaderProgram.getUniformLocation(UNIFORM_COLOR);
+        u_colorU = shaderProgram.getUniformLocation(UNIFORM_COLOR_U);
+        u_colorV = shaderProgram.getUniformLocation(UNIFORM_COLOR_V);
     }
 
     @Override
@@ -54,8 +57,11 @@ public class SimpleShader implements Shader {
     public void render(Renderable renderable) {
         shaderProgram.setUniformMatrix(u_worldTrans, renderable.worldTransform);
 
-        Color color = ((ColorAttribute) renderable.material.get(ColorAttribute.Diffuse)).color;
-        shaderProgram.setUniformf(u_color, color.r, color.g, color.b);
+        SimpleColorAttribute attribute = (SimpleColorAttribute) renderable.material.get(SimpleColorAttribute.DiffuseUV);
+        Color colorU = attribute.color1;
+        Color colorV = attribute.color2;
+        shaderProgram.setUniformf(u_colorU, colorU.r, colorU.g, colorU.b);
+        shaderProgram.setUniformf(u_colorV, colorV.r, colorV.g, colorV.b);
 
         renderable.mesh.render(shaderProgram, renderable.primitiveType, renderable.meshPartOffset, renderable.meshPartSize);
     }
@@ -72,10 +78,36 @@ public class SimpleShader implements Shader {
 
     @Override
     public boolean canRender(Renderable renderable) {
-        return renderable.material.has(ColorAttribute.Diffuse);
+        return renderable.material.has(SimpleColorAttribute.DiffuseUV);
     }
 
     private final String UNIFORM_PROJ = "u_projTrans";
     private final String UNIFORM_WORLD = "u_worldTrans";
-    private final String UNIFORM_COLOR = "u_color";
+    private final String UNIFORM_COLOR_U = "u_colorU";
+    private final String UNIFORM_COLOR_V = "u_colorV";
+
+    public static class SimpleColorAttribute extends Attribute {
+        public static final String DiffuseUVAlias = "diffuseUVColor";
+        public static final long   DiffuseUV = register(DiffuseUVAlias);
+
+        public final Color color1 = new Color();
+        public final Color color2 = new Color();
+
+        public SimpleColorAttribute(long type, Color color1, Color color2) {
+            super(type);
+            this.color1.set(color1);
+            this.color2.set(color2);
+        }
+
+        @Override
+        public Attribute copy() {
+            return new SimpleColorAttribute(type, color1, color2);
+        }
+
+        @Override
+        public boolean equals(Attribute attribute) {
+            SimpleColorAttribute casted = (SimpleColorAttribute) attribute;
+            return type == casted.type && color1.equals(casted.color1) && color2.equals(casted.color2);
+        }
+    }
 }
