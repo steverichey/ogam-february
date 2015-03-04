@@ -3,7 +3,6 @@ package com.steverichey.ogamfebruary;
 import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.InputAdapter;
-import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
@@ -15,8 +14,8 @@ import com.badlogic.gdx.graphics.g3d.ModelBatch;
 import com.badlogic.gdx.graphics.g3d.Shader;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
-import com.badlogic.gdx.math.Intersector;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.math.collision.BoundingBox;
 import com.badlogic.gdx.math.collision.Ray;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
@@ -37,6 +36,8 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     private Vector3 position;
     private Material selectionMaterial;
     private Material originalMaterial;
+    private Shape objectShape;
+    private final BoundingBox bounds = new BoundingBox();
     private int selected = -1;
     private int selecting = -1;
     private int visibleCount = 0;
@@ -53,7 +54,7 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         // camera setup
 		camera = new PerspectiveCamera(67, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
-        camera.position.set(0f, 8f, 8f);
+        camera.position.set(8f, 8f, 8f);
         camera.lookAt(0f, 0f, 0f);
         camera.near = 1f;
         camera.far = 300f;
@@ -73,6 +74,12 @@ public class GameClass extends InputAdapter implements ApplicationListener {
                 SimpleColorAttribute colorAttribute = new SimpleColorAttribute(SimpleColorAttribute.DiffuseUV, color1, color2);
                 gameObject.materials.get(0).set(colorAttribute);
 
+                if (objectShape == null) {
+                    gameObject.calculateBoundingBox(bounds);
+                    objectShape = new SphereShape(bounds);
+                }
+
+                gameObject.shape = objectShape;
                 instances.add(gameObject);
             }
         }
@@ -101,7 +108,7 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         modelBatch.begin(camera);
 
         for (final GameObject instance : instances) {
-            if (isVisible(camera, instance)) {
+            if (instance.isVisible(camera)) {
                 modelBatch.render(instance, shader);
                 visibleCount++;
             }
@@ -112,6 +119,8 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         stringBuilder.setLength(0);
         stringBuilder.append(" FPS: ");
         stringBuilder.append(Gdx.graphics.getFramesPerSecond());
+        stringBuilder.append(" Camera: ");
+        stringBuilder.append(camera.position);
         stringBuilder.append(" Visible: ");
         stringBuilder.append(visibleCount);
         stringBuilder.append(" Selected: ");
@@ -184,36 +193,15 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         float distance = -1;
 
         for (int i = 0; i < instances.size; i++) {
-            final GameObject instance = instances.get(i);
+            final float thisDistance = instances.get(i).intersects(ray);
 
-            instance.transform.getTranslation(position);
-            position.add(instance.center);
-
-            final float length = ray.direction.dot(position.x - ray.origin.x, position.y - ray.origin.y, position.z - ray.origin.z);
-
-            if (length < 0f) {
-                continue;
-            }
-
-            float thisDistance = position.dst2(ray.origin.x + ray.direction.x * length, ray.origin.y + ray.direction.y * length, ray.origin.z + ray.direction.z * length);
-
-            if (distance >= 0f && thisDistance > distance) {
-                continue;
-            }
-
-            if (thisDistance <= instance.radius * instance.radius) {
+            if (thisDistance >= 0f && (distance < 0f || thisDistance <= distance)) {
                 result = i;
                 distance = thisDistance;
             }
         }
 
         return result;
-    }
-
-    private boolean isVisible(final Camera camera, final GameObject instance) {
-        instance.transform.getTranslation(position);
-        position.add(instance.center);
-        return camera.frustum.sphereInFrustum(position, instance.radius);
     }
 
     @Override
