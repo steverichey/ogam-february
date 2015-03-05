@@ -11,46 +11,45 @@ import com.badlogic.gdx.graphics.g3d.Environment;
 import com.badlogic.gdx.graphics.g3d.Material;
 import com.badlogic.gdx.graphics.g3d.Model;
 import com.badlogic.gdx.graphics.g3d.ModelBatch;
-import com.badlogic.gdx.graphics.g3d.ModelInstance;
 import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.physics.bullet.Bullet;
 import com.badlogic.gdx.physics.bullet.collision.CollisionObjectWrapper;
 import com.badlogic.gdx.physics.bullet.collision.btBoxShape;
+import com.badlogic.gdx.physics.bullet.collision.btCapsuleShape;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionAlgorithm;
-import com.badlogic.gdx.physics.bullet.collision.btCollisionAlgorithmConstructionInfo;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionObject;
-import com.badlogic.gdx.physics.bullet.collision.btCollisionShape;
+import com.badlogic.gdx.physics.bullet.collision.btConeShape;
+import com.badlogic.gdx.physics.bullet.collision.btCylinderShape;
 import com.badlogic.gdx.physics.bullet.collision.btDefaultCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btDispatcherInfo;
 import com.badlogic.gdx.physics.bullet.collision.btManifoldResult;
-import com.badlogic.gdx.physics.bullet.collision.btSphereBoxCollisionAlgorithm;
 import com.badlogic.gdx.physics.bullet.collision.btSphereShape;
 import com.badlogic.gdx.utils.Array;
+import com.badlogic.gdx.utils.ArrayMap;
 
 public class GameClass extends InputAdapter implements ApplicationListener {
     private PerspectiveCamera camera;
     private CameraInputController inputController;
     private ModelBatch modelBatch;
-    private Array<ModelInstance> instances;
+    private Array<GameObject> instances;
+    private ArrayMap<String, GameObject.Constructor> constructors;
     private Environment environment;
     private Model model;
-    private ModelInstance groundInstance;
-    private ModelInstance ballInstance;
     private boolean collision = false;
     private float delta = 0;
+    private float spawnTimer = 0;
+    private static final int POS_NORM = Usage.Position | Usage.Normal;
+    private static final int GL_TRI   = GL20.GL_TRIANGLES;
 
     // bullet physics
-    private btCollisionShape ballShape;
-    private btCollisionShape groundShape;
-    private btCollisionObject ballObject;
-    private btCollisionObject groundObject;
     private btCollisionConfiguration collisionConfiguration;
     private btDispatcher dispatcher;
 
@@ -74,49 +73,62 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         inputController = new CameraInputController(camera);
         Gdx.input.setInputProcessor(inputController);
 
-        ModelBuilder modelBuilder = new ModelBuilder();
-        modelBuilder.begin();
-        modelBuilder.node().id = "ground";
-        Material materialRed   = new Material(ColorAttribute.createDiffuse(Color.RED));
-        Material materialGreen = new Material(ColorAttribute.createDiffuse(Color.GREEN));
-        modelBuilder.part("box", GL20.GL_TRIANGLES, Usage.Position | Usage.Normal, materialRed).box(5f, 1f, 5f);
-        modelBuilder.node().id = "ball";
-        modelBuilder.part("sphere", GL20.GL_TRIANGLES, Usage.Position | Usage.Normal, materialGreen).sphere(1f, 1f, 1f, 10, 10);
-        model = modelBuilder.end();
+        Material redMat = new Material(ColorAttribute.createDiffuse(Color.RED));
+        Material grnMat = new Material(ColorAttribute.createDiffuse(Color.GREEN));
+        Material bluMat = new Material(ColorAttribute.createDiffuse(Color.BLUE));
+        Material ylwMat = new Material(ColorAttribute.createDiffuse(Color.YELLOW));
+        Material cyaMat = new Material(ColorAttribute.createDiffuse(Color.CYAN));
+        Material magMat = new Material(ColorAttribute.createDiffuse(Color.MAGENTA));
 
-        groundInstance = new ModelInstance(model, "ground");
-        ballInstance = new ModelInstance(model, "ball");
-        ballInstance.transform.setToTranslation(0, 9f, 0);
+        ModelBuilder mb = new ModelBuilder();
+        mb.begin();
+        mb.node().id = "ground";
+        mb.part("ground", GL_TRI, POS_NORM, redMat).box(5f, 1f, 5f);
+        mb.node().id = "sphere";
+        mb.part("sphere", GL_TRI, POS_NORM, grnMat).sphere(1f, 1f, 1f, 10, 10);
+        mb.node().id = "box";
+        mb.part("box", GL_TRI, POS_NORM, bluMat).box(1f, 1f, 1f);
+        mb.node().id = "cone";
+        mb.part("cone", GL_TRI, POS_NORM, ylwMat).cone(1f, 2f, 1f, 10);
+        mb.node().id = "capsule";
+        mb.part("capsule", GL_TRI, POS_NORM, cyaMat).capsule(0.5f, 2f, 10);
+        mb.node().id = "cylinder";
+        mb.part("cylinder", GL_TRI, POS_NORM, magMat).cylinder(1f, 2f, 1f, 10);
+        model = mb.end();
 
-        // bullet physics stuff
-        ballShape = new btSphereShape(0.5f);
-        groundShape = new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f));
+        constructors = new ArrayMap<String, GameObject.Constructor>(String.class, GameObject.Constructor.class);
+        constructors.put("ground"  , new GameObject.Constructor(model, "ground"  , new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f))));
+        constructors.put("sphere"  , new GameObject.Constructor(model, "sphere"  , new btSphereShape(0.5f)));
+        constructors.put("box"     , new GameObject.Constructor(model, "box"     , new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f))));
+        constructors.put("cone"    , new GameObject.Constructor(model, "cone"    , new btConeShape(0.5f, 2f)));
+        constructors.put("capsule" , new GameObject.Constructor(model, "capsule" , new btCapsuleShape(0.5f, 1f)));
+        constructors.put("cylinder", new GameObject.Constructor(model, "cylinder", new btCylinderShape(new Vector3(0.5f, 1f, 0.5f))));
 
-        ballObject = new btCollisionObject();
-        ballObject.setCollisionShape(ballShape);
-        ballObject.setWorldTransform(ballInstance.transform);
-
-        groundObject = new btCollisionObject();
-        groundObject.setCollisionShape(groundShape);
-        groundObject.setWorldTransform(groundInstance.transform);
+        instances = new Array<GameObject>();
+        instances.add(constructors.get("ground").construct());
 
         collisionConfiguration = new btDefaultCollisionConfiguration();
         dispatcher = new btCollisionDispatcher(collisionConfiguration);
-
-        instances = new Array<ModelInstance>();
-        instances.add(ballInstance);
-        instances.add(groundInstance);
 	}
 
     @Override
     public void render() {
         delta = Math.min(1f / 30f, Gdx.graphics.getDeltaTime());
 
-        if (!collision) {
-            ballInstance.transform.translate(0, -delta, 0);
-            ballObject.setWorldTransform(ballInstance.transform);
+        for (GameObject obj : instances) {
+            if (obj.moving) {
+                obj.transform.trn(0, -delta, 0);
+                obj.body.setWorldTransform(obj.transform);
 
-            collision = checkCollision();
+                if (checkCollision(obj.body, instances.get(0).body)) {
+                    obj.moving = false;
+                }
+            }
+        }
+
+        if ((spawnTimer -= delta) < 0) {
+            spawn();
+            spawnTimer = 1.5f;
         }
 
         inputController.update();
@@ -129,13 +141,24 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         modelBatch.end();
     }
 
-    private boolean checkCollision() {
-        CollisionObjectWrapper co0 = new CollisionObjectWrapper(ballObject);
-        CollisionObjectWrapper co1 = new CollisionObjectWrapper(groundObject);
+    private void spawn() {
+        GameObject obj = constructors.values[1 + MathUtils.random(constructors.size - 2)].construct();
+        obj.moving = true;
+        obj.transform.setFromEulerAngles(deg(), deg(), deg());
+        obj.transform.trn(MathUtils.random(-2.5f, 2.5f), 9f, MathUtils.random(-2.5f, 2.5f));
+        obj.body.setWorldTransform(obj.transform);
+        instances.add(obj);
+    }
 
-        btCollisionAlgorithmConstructionInfo ci = new btCollisionAlgorithmConstructionInfo();
-        ci.setDispatcher1(dispatcher);
-        btCollisionAlgorithm algorithm = new btSphereBoxCollisionAlgorithm(null, ci, co0.wrapper, co1.wrapper, false);
+    private float deg() {
+        return MathUtils.random(360f);
+    }
+
+    private boolean checkCollision(btCollisionObject obj0, btCollisionObject obj1) {
+        CollisionObjectWrapper co0 = new CollisionObjectWrapper(obj0);
+        CollisionObjectWrapper co1 = new CollisionObjectWrapper(obj1);
+
+        btCollisionAlgorithm algorithm = dispatcher.findAlgorithm(co0.wrapper, co1.wrapper);
 
         btDispatcherInfo info = new btDispatcherInfo();
         btManifoldResult result = new btManifoldResult(co0.wrapper, co1.wrapper);
@@ -144,10 +167,10 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         boolean r = result.getPersistentManifold().getNumContacts() > 0;
 
+        dispatcher.freeCollisionAlgorithm(algorithm.getCPointer());
         result.dispose();
         info.dispose();
         algorithm.dispose();
-        ci.dispose();
         co0.dispose();
         co1.dispose();
 
@@ -166,11 +189,17 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
     @Override
     public void dispose() {
-        groundObject.dispose();
-        groundShape.dispose();
+        for (GameObject object : instances) {
+            object.dispose();
+        }
 
-        ballObject.dispose();
-        ballShape.dispose();
+        instances.clear();
+
+        for (GameObject.Constructor construct : constructors.values()) {
+            construct.dispose();
+        }
+
+        constructors.clear();
 
         dispatcher.dispose();
         collisionConfiguration.dispose();
