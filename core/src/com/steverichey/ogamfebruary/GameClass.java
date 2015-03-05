@@ -16,6 +16,22 @@ import com.badlogic.gdx.graphics.g3d.attributes.ColorAttribute;
 import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
+import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.physics.bullet.Bullet;
+import com.badlogic.gdx.physics.bullet.collision.CollisionObjectWrapper;
+import com.badlogic.gdx.physics.bullet.collision.btBoxShape;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionAlgorithm;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionAlgorithmConstructionInfo;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionConfiguration;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionDispatcher;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionObject;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionShape;
+import com.badlogic.gdx.physics.bullet.collision.btDefaultCollisionConfiguration;
+import com.badlogic.gdx.physics.bullet.collision.btDispatcher;
+import com.badlogic.gdx.physics.bullet.collision.btDispatcherInfo;
+import com.badlogic.gdx.physics.bullet.collision.btManifoldResult;
+import com.badlogic.gdx.physics.bullet.collision.btSphereBoxCollisionAlgorithm;
+import com.badlogic.gdx.physics.bullet.collision.btSphereShape;
 import com.badlogic.gdx.utils.Array;
 
 public class GameClass extends InputAdapter implements ApplicationListener {
@@ -30,9 +46,17 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     private boolean collision = false;
     private float delta = 0;
 
+    // bullet physics
+    private btCollisionShape ballShape;
+    private btCollisionShape groundShape;
+    private btCollisionObject ballObject;
+    private btCollisionObject groundObject;
+    private btCollisionConfiguration collisionConfiguration;
+    private btDispatcher dispatcher;
+
 	@Override
 	public void create() {
-        Bullet.init(); // TODO
+        Bullet.init();
         modelBatch = new ModelBatch();
 
         environment = new Environment();
@@ -64,6 +88,21 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         ballInstance = new ModelInstance(model, "ball");
         ballInstance.transform.setToTranslation(0, 9f, 0);
 
+        // bullet physics stuff
+        ballShape = new btSphereShape(0.5f);
+        groundShape = new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f));
+
+        ballObject = new btCollisionObject();
+        ballObject.setCollisionShape(ballShape);
+        ballObject.setWorldTransform(ballInstance.transform);
+
+        groundObject = new btCollisionObject();
+        groundObject.setCollisionShape(groundShape);
+        groundObject.setWorldTransform(groundInstance.transform);
+
+        collisionConfiguration = new btDefaultCollisionConfiguration();
+        dispatcher = new btCollisionDispatcher(collisionConfiguration);
+
         instances = new Array<ModelInstance>();
         instances.add(ballInstance);
         instances.add(groundInstance);
@@ -75,6 +114,8 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         if (!collision) {
             ballInstance.transform.translate(0, -delta, 0);
+            ballObject.setWorldTransform(ballInstance.transform);
+
             collision = checkCollision();
         }
 
@@ -89,7 +130,28 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     }
 
     private boolean checkCollision() {
-        return false;
+        CollisionObjectWrapper co0 = new CollisionObjectWrapper(ballObject);
+        CollisionObjectWrapper co1 = new CollisionObjectWrapper(groundObject);
+
+        btCollisionAlgorithmConstructionInfo ci = new btCollisionAlgorithmConstructionInfo();
+        ci.setDispatcher1(dispatcher);
+        btCollisionAlgorithm algorithm = new btSphereBoxCollisionAlgorithm(null, ci, co0.wrapper, co1.wrapper, false);
+
+        btDispatcherInfo info = new btDispatcherInfo();
+        btManifoldResult result = new btManifoldResult(co0.wrapper, co1.wrapper);
+
+        algorithm.processCollision(co0.wrapper, co1.wrapper, info, result);
+
+        boolean r = result.getPersistentManifold().getNumContacts() > 0;
+
+        result.dispose();
+        info.dispose();
+        algorithm.dispose();
+        ci.dispose();
+        co0.dispose();
+        co1.dispose();
+
+        return r;
     }
 
     @Override
@@ -104,6 +166,15 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
     @Override
     public void dispose() {
+        groundObject.dispose();
+        groundShape.dispose();
+
+        ballObject.dispose();
+        ballShape.dispose();
+
+        dispatcher.dispose();
+        collisionConfiguration.dispose();
+
         modelBatch.dispose();
         model.dispose();
     }
