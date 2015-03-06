@@ -18,19 +18,19 @@ import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.physics.bullet.Bullet;
-import com.badlogic.gdx.physics.bullet.collision.CollisionObjectWrapper;
+import com.badlogic.gdx.physics.bullet.collision.ContactListener;
 import com.badlogic.gdx.physics.bullet.collision.btBoxShape;
+import com.badlogic.gdx.physics.bullet.collision.btBroadphaseInterface;
 import com.badlogic.gdx.physics.bullet.collision.btCapsuleShape;
-import com.badlogic.gdx.physics.bullet.collision.btCollisionAlgorithm;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionObject;
+import com.badlogic.gdx.physics.bullet.collision.btCollisionWorld;
 import com.badlogic.gdx.physics.bullet.collision.btConeShape;
 import com.badlogic.gdx.physics.bullet.collision.btCylinderShape;
+import com.badlogic.gdx.physics.bullet.collision.btDbvtBroadphase;
 import com.badlogic.gdx.physics.bullet.collision.btDefaultCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btDispatcher;
-import com.badlogic.gdx.physics.bullet.collision.btDispatcherInfo;
-import com.badlogic.gdx.physics.bullet.collision.btManifoldResult;
 import com.badlogic.gdx.physics.bullet.collision.btSphereShape;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ArrayMap;
@@ -43,15 +43,27 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     private ArrayMap<String, GameObject.Constructor> constructors;
     private Environment environment;
     private Model model;
+    private GameContactListener contactListener;
     private boolean collision = false;
     private float delta = 0;
     private float spawnTimer = 0;
-    private static final int POS_NORM = Usage.Position | Usage.Normal;
-    private static final int GL_TRI   = GL20.GL_TRIANGLES;
+    private static final int POS_NORM      = Usage.Position | Usage.Normal;
+    private static final int GL_TRI        = GL20.GL_TRIANGLES;
+    private static final short GROUND_FLAG = 1<<8;
+    private static final short OBJECT_FLAG = 1<<9;
+    private static final short ALL_FLAG    = -1;
+    private static final String S_GRD = "ground";
+    private static final String S_SPH = "sphere";
+    private static final String S_BOX = "box";
+    private static final String S_CON = "cone";
+    private static final String S_CAP = "capsule";
+    private static final String S_CYL = "cylinder";
 
     // bullet physics
     private btCollisionConfiguration collisionConfiguration;
     private btDispatcher dispatcher;
+    private btBroadphaseInterface broadphaseInterface;
+    private btCollisionWorld collisionWorld;
 
 	@Override
 	public void create() {
@@ -82,34 +94,39 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         ModelBuilder mb = new ModelBuilder();
         mb.begin();
-        mb.node().id = "ground";
-        mb.part("ground", GL_TRI, POS_NORM, redMat).box(5f, 1f, 5f);
-        mb.node().id = "sphere";
-        mb.part("sphere", GL_TRI, POS_NORM, grnMat).sphere(1f, 1f, 1f, 10, 10);
-        mb.node().id = "box";
-        mb.part("box", GL_TRI, POS_NORM, bluMat).box(1f, 1f, 1f);
-        mb.node().id = "cone";
-        mb.part("cone", GL_TRI, POS_NORM, ylwMat).cone(1f, 2f, 1f, 10);
-        mb.node().id = "capsule";
-        mb.part("capsule", GL_TRI, POS_NORM, cyaMat).capsule(0.5f, 2f, 10);
-        mb.node().id = "cylinder";
-        mb.part("cylinder", GL_TRI, POS_NORM, magMat).cylinder(1f, 2f, 1f, 10);
+        mb.node().id = S_GRD;
+        mb.part(S_GRD, GL_TRI, POS_NORM, redMat).box(5f, 1f, 5f);
+        mb.node().id = S_SPH;
+        mb.part(S_SPH, GL_TRI, POS_NORM, grnMat).sphere(1f, 1f, 1f, 10, 10);
+        mb.node().id = S_BOX;
+        mb.part(S_BOX, GL_TRI, POS_NORM, bluMat).box(1f, 1f, 1f);
+        mb.node().id = S_CON;
+        mb.part(S_CYL, GL_TRI, POS_NORM, ylwMat).cone(1f, 2f, 1f, 10);
+        mb.node().id = S_CAP;
+        mb.part(S_CAP, GL_TRI, POS_NORM, cyaMat).capsule(0.5f, 2f, 10);
+        mb.node().id = S_CYL;
+        mb.part(S_CYL, GL_TRI, POS_NORM, magMat).cylinder(1f, 2f, 1f, 10);
         model = mb.end();
 
         constructors = new ArrayMap<String, GameObject.Constructor>(String.class, GameObject.Constructor.class);
-        constructors.put("ground"  , new GameObject.Constructor(model, "ground"  , new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f))));
-        constructors.put("sphere"  , new GameObject.Constructor(model, "sphere"  , new btSphereShape(0.5f)));
-        constructors.put("box"     , new GameObject.Constructor(model, "box"     , new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f))));
-        constructors.put("cone"    , new GameObject.Constructor(model, "cone"    , new btConeShape(0.5f, 2f)));
-        constructors.put("capsule" , new GameObject.Constructor(model, "capsule" , new btCapsuleShape(0.5f, 1f)));
-        constructors.put("cylinder", new GameObject.Constructor(model, "cylinder", new btCylinderShape(new Vector3(0.5f, 1f, 0.5f))));
-
-        instances = new Array<GameObject>();
-        instances.add(constructors.get("ground").construct());
+        constructors.put(S_GRD, new GameObject.Constructor(model, S_GRD, new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f))));
+        constructors.put(S_SPH, new GameObject.Constructor(model, S_SPH, new btSphereShape(0.5f)));
+        constructors.put(S_BOX, new GameObject.Constructor(model, S_BOX, new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f))));
+        constructors.put(S_CON, new GameObject.Constructor(model, S_CON, new btConeShape(0.5f, 2f)));
+        constructors.put(S_CAP, new GameObject.Constructor(model, S_CAP, new btCapsuleShape(0.5f, 1f)));
+        constructors.put(S_CYL, new GameObject.Constructor(model, S_CYL, new btCylinderShape(new Vector3(0.5f, 1f, 0.5f))));
 
         collisionConfiguration = new btDefaultCollisionConfiguration();
         dispatcher = new btCollisionDispatcher(collisionConfiguration);
-	}
+        broadphaseInterface = new btDbvtBroadphase();
+        collisionWorld = new btCollisionWorld(dispatcher, broadphaseInterface, collisionConfiguration);
+        contactListener = new GameContactListener();
+
+        instances = new Array<GameObject>();
+        GameObject groundObject = constructors.get(S_GRD).construct();
+        instances.add(groundObject);
+        collisionWorld.addCollisionObject(groundObject.body, GROUND_FLAG, ALL_FLAG);
+    }
 
     @Override
     public void render() {
@@ -119,12 +136,10 @@ public class GameClass extends InputAdapter implements ApplicationListener {
             if (obj.moving) {
                 obj.transform.trn(0, -delta, 0);
                 obj.body.setWorldTransform(obj.transform);
-
-                if (checkCollision(obj.body, instances.get(0).body)) {
-                    obj.moving = false;
-                }
             }
         }
+
+        collisionWorld.performDiscreteCollisionDetection();
 
         if ((spawnTimer -= delta) < 0) {
             spawn();
@@ -147,34 +162,14 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         obj.transform.setFromEulerAngles(deg(), deg(), deg());
         obj.transform.trn(MathUtils.random(-2.5f, 2.5f), 9f, MathUtils.random(-2.5f, 2.5f));
         obj.body.setWorldTransform(obj.transform);
+        obj.body.setUserValue(instances.size);
+        obj.body.setCollisionFlags(obj.body.getCollisionFlags() | btCollisionObject.CollisionFlags.CF_CUSTOM_MATERIAL_CALLBACK);
         instances.add(obj);
+        collisionWorld.addCollisionObject(obj.body, OBJECT_FLAG, GROUND_FLAG);
     }
 
     private float deg() {
         return MathUtils.random(360f);
-    }
-
-    private boolean checkCollision(btCollisionObject obj0, btCollisionObject obj1) {
-        CollisionObjectWrapper co0 = new CollisionObjectWrapper(obj0);
-        CollisionObjectWrapper co1 = new CollisionObjectWrapper(obj1);
-
-        btCollisionAlgorithm algorithm = dispatcher.findAlgorithm(co0.wrapper, co1.wrapper);
-
-        btDispatcherInfo info = new btDispatcherInfo();
-        btManifoldResult result = new btManifoldResult(co0.wrapper, co1.wrapper);
-
-        algorithm.processCollision(co0.wrapper, co1.wrapper, info, result);
-
-        boolean r = result.getPersistentManifold().getNumContacts() > 0;
-
-        dispatcher.freeCollisionAlgorithm(algorithm.getCPointer());
-        result.dispose();
-        info.dispose();
-        algorithm.dispose();
-        co0.dispose();
-        co1.dispose();
-
-        return r;
     }
 
     @Override
@@ -196,13 +191,17 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         instances.clear();
 
         for (GameObject.Constructor construct : constructors.values()) {
-            construct.dispose();
+            // this was causing a crash, i dunno
+            //construct.dispose();
         }
 
         constructors.clear();
 
         dispatcher.dispose();
         collisionConfiguration.dispose();
+        contactListener.dispose();
+        collisionWorld.dispose();
+        broadphaseInterface.dispose();
 
         modelBatch.dispose();
         model.dispose();
@@ -226,5 +225,18 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     @Override
     public boolean touchUp(int screenX, int screenY, int pointer, int button) {
         return true;
+    }
+
+    class GameContactListener extends ContactListener {
+        @Override
+        public boolean onContactAdded(int userval0, int partid0, int index0, int userval1, int partid1, int index1) {
+            if (userval0 == 0) {
+                instances.get(userval1).moving = false;
+            } else if (userval1 == 0) {
+                instances.get(userval0).moving = false;
+            }
+
+            return true;
+        }
     }
 }
