@@ -142,7 +142,7 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         dynamicsWorld.stepSimulation(delta, 5, 1f/60f);
 
         for (GameObject obj : instances) {
-            obj.body.setWorldTransform(obj.transform);
+            obj.body.getWorldTransform(obj.transform);
         }
 
         if ((spawnTimer -= delta) < 0) {
