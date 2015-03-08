@@ -187,25 +187,25 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
     @Override
     public void dispose() {
-        for (GameObject object : instances) {
-            object.dispose();
+        for (GameObject obj : instances) {
+            obj.dispose();
         }
 
         instances.clear();
 
-        for (GameObject.Constructor construct : constructors.values()) {
-            // this was causing a crash, i dunno
-            construct.dispose();
+        for (GameObject.Constructor ctor : constructors.values()) {
+            ctor.dispose();
         }
-
+        
         constructors.clear();
 
+        dynamicsWorld.dispose();
+        constraintSolver.dispose();
+        broadphase.dispose();
         dispatcher.dispose();
         collisionConfiguration.dispose();
+
         contactListener.dispose();
-        dynamicsWorld.dispose();
-        broadphase.dispose();
-        constraintSolver.dispose();
 
         modelBatch.dispose();
         model.dispose();
