@@ -32,6 +32,10 @@ import com.badlogic.gdx.physics.bullet.collision.btDbvtBroadphase;
 import com.badlogic.gdx.physics.bullet.collision.btDefaultCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btSphereShape;
+import com.badlogic.gdx.physics.bullet.dynamics.btConstraintSolver;
+import com.badlogic.gdx.physics.bullet.dynamics.btDiscreteDynamicsWorld;
+import com.badlogic.gdx.physics.bullet.dynamics.btDynamicsWorld;
+import com.badlogic.gdx.physics.bullet.dynamics.btSequentialImpulseConstraintSolver;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ArrayMap;
 
@@ -62,8 +66,9 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     // bullet physics
     private btCollisionConfiguration collisionConfiguration;
     private btDispatcher dispatcher;
-    private btBroadphaseInterface broadphaseInterface;
-    private btCollisionWorld collisionWorld;
+    private btBroadphaseInterface broadphase;
+    private btDynamicsWorld dynamicsWorld;
+    private btConstraintSolver constraintSolver;
 
 	@Override
 	public void create() {
@@ -109,37 +114,36 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         model = mb.end();
 
         constructors = new ArrayMap<String, GameObject.Constructor>(String.class, GameObject.Constructor.class);
-        constructors.put(S_GRD, new GameObject.Constructor(model, S_GRD, new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f))));
-        constructors.put(S_SPH, new GameObject.Constructor(model, S_SPH, new btSphereShape(0.5f)));
-        constructors.put(S_BOX, new GameObject.Constructor(model, S_BOX, new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f))));
-        constructors.put(S_CON, new GameObject.Constructor(model, S_CON, new btConeShape(0.5f, 2f)));
-        constructors.put(S_CAP, new GameObject.Constructor(model, S_CAP, new btCapsuleShape(0.5f, 1f)));
-        constructors.put(S_CYL, new GameObject.Constructor(model, S_CYL, new btCylinderShape(new Vector3(0.5f, 1f, 0.5f))));
+        constructors.put(S_GRD, new GameObject.Constructor(model, S_GRD, new btBoxShape(new Vector3(2.5f, 0.5f, 2.5f)), 0));
+        constructors.put(S_SPH, new GameObject.Constructor(model, S_SPH, new btSphereShape(0.5f), 1f));
+        constructors.put(S_BOX, new GameObject.Constructor(model, S_BOX, new btBoxShape(new Vector3(0.5f, 0.5f, 0.5f)), 1f));
+        constructors.put(S_CON, new GameObject.Constructor(model, S_CON, new btConeShape(0.5f, 2f), 1f));
+        constructors.put(S_CAP, new GameObject.Constructor(model, S_CAP, new btCapsuleShape(0.5f, 1f), 1f));
+        constructors.put(S_CYL, new GameObject.Constructor(model, S_CYL, new btCylinderShape(new Vector3(0.5f, 1f, 0.5f)), 0.5f));
 
         collisionConfiguration = new btDefaultCollisionConfiguration();
         dispatcher = new btCollisionDispatcher(collisionConfiguration);
-        broadphaseInterface = new btDbvtBroadphase();
-        collisionWorld = new btCollisionWorld(dispatcher, broadphaseInterface, collisionConfiguration);
+        broadphase = new btDbvtBroadphase();
+        constraintSolver = new btSequentialImpulseConstraintSolver();
+        dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher, broadphase, constraintSolver, collisionConfiguration);
+        dynamicsWorld.setGravity(new Vector3(0, -10f, 0));
         contactListener = new GameContactListener();
 
         instances = new Array<GameObject>();
         GameObject groundObject = constructors.get(S_GRD).construct();
         instances.add(groundObject);
-        collisionWorld.addCollisionObject(groundObject.body, GROUND_FLAG, ALL_FLAG);
+        dynamicsWorld.addRigidBody(groundObject.body, GROUND_FLAG, ALL_FLAG);
     }
 
     @Override
     public void render() {
         delta = Math.min(1f / 30f, Gdx.graphics.getDeltaTime());
 
-        for (GameObject obj : instances) {
-            if (obj.moving) {
-                obj.transform.trn(0, -delta, 0);
-                obj.body.setWorldTransform(obj.transform);
-            }
-        }
+        dynamicsWorld.stepSimulation(delta, 5, 1f/60f);
 
-        collisionWorld.performDiscreteCollisionDetection();
+        for (GameObject obj : instances) {
+            obj.body.setWorldTransform(obj.transform);
+        }
 
         if ((spawnTimer -= delta) < 0) {
             spawn();
@@ -158,14 +162,13 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
     private void spawn() {
         GameObject obj = constructors.values[1 + MathUtils.random(constructors.size - 2)].construct();
-        obj.moving = true;
         obj.transform.setFromEulerAngles(deg(), deg(), deg());
         obj.transform.trn(MathUtils.random(-2.5f, 2.5f), 9f, MathUtils.random(-2.5f, 2.5f));
         obj.body.setWorldTransform(obj.transform);
         obj.body.setUserValue(instances.size);
         obj.body.setCollisionFlags(obj.body.getCollisionFlags() | btCollisionObject.CollisionFlags.CF_CUSTOM_MATERIAL_CALLBACK);
         instances.add(obj);
-        collisionWorld.addCollisionObject(obj.body, OBJECT_FLAG, GROUND_FLAG);
+        dynamicsWorld.addRigidBody(obj.body, OBJECT_FLAG, GROUND_FLAG);
     }
 
     private float deg() {
@@ -192,7 +195,7 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         for (GameObject.Constructor construct : constructors.values()) {
             // this was causing a crash, i dunno
-            //construct.dispose();
+            construct.dispose();
         }
 
         constructors.clear();
@@ -200,8 +203,9 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         dispatcher.dispose();
         collisionConfiguration.dispose();
         contactListener.dispose();
-        collisionWorld.dispose();
-        broadphaseInterface.dispose();
+        dynamicsWorld.dispose();
+        broadphase.dispose();
+        constraintSolver.dispose();
 
         modelBatch.dispose();
         model.dispose();
@@ -230,11 +234,8 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     class GameContactListener extends ContactListener {
         @Override
         public boolean onContactAdded(int userval0, int partid0, int index0, int userval1, int partid1, int index1) {
-            if (userval0 == 0) {
-                instances.get(userval1).moving = false;
-            } else if (userval1 == 0) {
-                instances.get(userval0).moving = false;
-            }
+            instances.get(userval0).moving = false;
+            instances.get(userval1).moving = false;
 
             return true;
         }
