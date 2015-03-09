@@ -16,6 +16,7 @@ import com.badlogic.gdx.graphics.g3d.environment.DirectionalLight;
 import com.badlogic.gdx.graphics.g3d.utils.CameraInputController;
 import com.badlogic.gdx.graphics.g3d.utils.ModelBuilder;
 import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.physics.bullet.Bullet;
 import com.badlogic.gdx.physics.bullet.collision.ContactListener;
@@ -25,7 +26,6 @@ import com.badlogic.gdx.physics.bullet.collision.btCapsuleShape;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionConfiguration;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionDispatcher;
 import com.badlogic.gdx.physics.bullet.collision.btCollisionObject;
-import com.badlogic.gdx.physics.bullet.collision.btCollisionWorld;
 import com.badlogic.gdx.physics.bullet.collision.btConeShape;
 import com.badlogic.gdx.physics.bullet.collision.btCylinderShape;
 import com.badlogic.gdx.physics.bullet.collision.btDbvtBroadphase;
@@ -36,6 +36,7 @@ import com.badlogic.gdx.physics.bullet.dynamics.btConstraintSolver;
 import com.badlogic.gdx.physics.bullet.dynamics.btDiscreteDynamicsWorld;
 import com.badlogic.gdx.physics.bullet.dynamics.btDynamicsWorld;
 import com.badlogic.gdx.physics.bullet.dynamics.btSequentialImpulseConstraintSolver;
+import com.badlogic.gdx.physics.bullet.linearmath.btMotionState;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ArrayMap;
 
@@ -48,14 +49,10 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     private Environment environment;
     private Model model;
     private GameContactListener contactListener;
-    private boolean collision = false;
-    private float delta = 0;
     private float spawnTimer = 0;
+    private static final float SPAWN_FREQ  = 0.5f;
     private static final int POS_NORM      = Usage.Position | Usage.Normal;
     private static final int GL_TRI        = GL20.GL_TRIANGLES;
-    private static final short GROUND_FLAG = 1<<8;
-    private static final short OBJECT_FLAG = 1<<9;
-    private static final short ALL_FLAG    = -1;
     private static final String S_GRD = "ground";
     private static final String S_SPH = "sphere";
     private static final String S_BOX = "box";
@@ -132,22 +129,18 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         instances = new Array<GameObject>();
         GameObject groundObject = constructors.get(S_GRD).construct();
         instances.add(groundObject);
-        dynamicsWorld.addRigidBody(groundObject.body, GROUND_FLAG, ALL_FLAG);
+        dynamicsWorld.addRigidBody(groundObject.body);
     }
 
     @Override
     public void render() {
-        delta = Math.min(1f / 30f, Gdx.graphics.getDeltaTime());
+        final float delta = Math.min(1f / 30f, Gdx.graphics.getDeltaTime());
 
         dynamicsWorld.stepSimulation(delta, 5, 1f/60f);
 
-        for (GameObject obj : instances) {
-            obj.body.getWorldTransform(obj.transform);
-        }
-
         if ((spawnTimer -= delta) < 0) {
             spawn();
-            spawnTimer = 1.5f;
+            spawnTimer = SPAWN_FREQ;
         }
 
         inputController.update();
@@ -164,11 +157,11 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         GameObject obj = constructors.values[1 + MathUtils.random(constructors.size - 2)].construct();
         obj.transform.setFromEulerAngles(deg(), deg(), deg());
         obj.transform.trn(MathUtils.random(-2.5f, 2.5f), 9f, MathUtils.random(-2.5f, 2.5f));
-        obj.body.setWorldTransform(obj.transform);
+        obj.body.proceedToTransform(obj.transform);
         obj.body.setUserValue(instances.size);
         obj.body.setCollisionFlags(obj.body.getCollisionFlags() | btCollisionObject.CollisionFlags.CF_CUSTOM_MATERIAL_CALLBACK);
         instances.add(obj);
-        dynamicsWorld.addRigidBody(obj.body, OBJECT_FLAG, GROUND_FLAG);
+        dynamicsWorld.addRigidBody(obj.body);
     }
 
     private float deg() {
@@ -196,7 +189,7 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         for (GameObject.Constructor ctor : constructors.values()) {
             ctor.dispose();
         }
-        
+
         constructors.clear();
 
         dynamicsWorld.dispose();
@@ -234,10 +227,31 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     class GameContactListener extends ContactListener {
         @Override
         public boolean onContactAdded(int userval0, int partid0, int index0, int userval1, int partid1, int index1) {
-            instances.get(userval0).moving = false;
-            instances.get(userval1).moving = false;
+            if (userval0 == 0) {
+                blanche(userval1);
+            } else if (userval1 == 0) {
+                blanche(userval0);
+            }
 
             return true;
+        }
+
+        private void blanche(int index) {
+            ((ColorAttribute) instances.get(index).materials.get(0).get(ColorAttribute.Diffuse)).color.set(Color.WHITE);
+        }
+    }
+
+    static class GameMotionState extends btMotionState {
+        public Matrix4 transform;
+
+        @Override
+        public void getWorldTransform(Matrix4 transform) {
+            transform.set(this.transform);
+        }
+
+        @Override
+        public void setWorldTransform(Matrix4 transform) {
+            this.transform.set(transform);
         }
     }
 }

@@ -10,16 +10,20 @@ import com.badlogic.gdx.utils.Disposable;
 
 public class GameObject extends ModelInstance implements Disposable {
     public final btRigidBody body;
-    public boolean moving = false;
+    public final GameClass.GameMotionState motionState;
 
     public GameObject(Model model, String node, btRigidBody.btRigidBodyConstructionInfo constructionInfo) {
         super(model, node);
+        motionState = new GameClass.GameMotionState();
+        motionState.transform = transform;
         body = new btRigidBody(constructionInfo);
+        body.setMotionState(motionState);
     }
 
     @Override
     public void dispose() {
         body.dispose();
+        motionState.dispose();
     }
 
     static class Constructor implements Disposable {
