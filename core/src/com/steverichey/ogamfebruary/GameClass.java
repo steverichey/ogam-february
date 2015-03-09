@@ -50,9 +50,13 @@ public class GameClass extends InputAdapter implements ApplicationListener {
     private Model model;
     private GameContactListener contactListener;
     private float spawnTimer = 0;
+    private float groundAngle = 0;
+    private float groundSpeed = 90f;
     private static final float SPAWN_FREQ  = 0.5f;
     private static final int POS_NORM      = Usage.Position | Usage.Normal;
     private static final int GL_TRI        = GL20.GL_TRIANGLES;
+    private static final short GROUND_FLAG = 1<<8;
+    private static final short OBJECT_FLAG = 1<<9;
     private static final String S_GRD = "ground";
     private static final String S_SPH = "sphere";
     private static final String S_BOX = "box";
@@ -128,13 +132,20 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         instances = new Array<GameObject>();
         GameObject groundObject = constructors.get(S_GRD).construct();
+        groundObject.body.setCollisionFlags(groundObject.body.getCollisionFlags() | btCollisionObject.CollisionFlags.CF_KINEMATIC_OBJECT);
         instances.add(groundObject);
         dynamicsWorld.addRigidBody(groundObject.body);
+        groundObject.body.setContactCallbackFlag(GROUND_FLAG);
+        groundObject.body.setContactCallbackFilter(0);
     }
 
     @Override
     public void render() {
         final float delta = Math.min(1f / 30f, Gdx.graphics.getDeltaTime());
+
+        groundAngle = (groundAngle + delta * groundSpeed) % 360f;
+        instances.get(0).transform.setTranslation(0, MathUtils.sinDeg(groundAngle) * 2.5f, 0f);
+        instances.get(0).body.setWorldTransform(instances.get(0).transform);
 
         dynamicsWorld.stepSimulation(delta, 5, 1f/60f);
 
@@ -162,6 +173,8 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         obj.body.setCollisionFlags(obj.body.getCollisionFlags() | btCollisionObject.CollisionFlags.CF_CUSTOM_MATERIAL_CALLBACK);
         instances.add(obj);
         dynamicsWorld.addRigidBody(obj.body);
+        obj.body.setContactCallbackFlag(OBJECT_FLAG);
+        obj.body.setContactCallbackFilter(GROUND_FLAG);
     }
 
     private float deg() {
@@ -226,11 +239,11 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
     class GameContactListener extends ContactListener {
         @Override
-        public boolean onContactAdded(int userval0, int partid0, int index0, int userval1, int partid1, int index1) {
-            if (userval0 == 0) {
-                blanche(userval1);
-            } else if (userval1 == 0) {
+        public boolean onContactAdded(int userval0, int partid0, int index0, boolean match0, int userval1, int partid1, int index1, boolean match1) {
+            if (match0) {
                 blanche(userval0);
+            } else if (match1) {
+                blanche(userval1);
             }
 
             return true;
