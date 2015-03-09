@@ -19,6 +19,7 @@ import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.physics.bullet.Bullet;
+import com.badlogic.gdx.physics.bullet.collision.Collision;
 import com.badlogic.gdx.physics.bullet.collision.ContactListener;
 import com.badlogic.gdx.physics.bullet.collision.btBoxShape;
 import com.badlogic.gdx.physics.bullet.collision.btBroadphaseInterface;
@@ -137,6 +138,7 @@ public class GameClass extends InputAdapter implements ApplicationListener {
         dynamicsWorld.addRigidBody(groundObject.body);
         groundObject.body.setContactCallbackFlag(GROUND_FLAG);
         groundObject.body.setContactCallbackFilter(0);
+        groundObject.body.setActivationState(Collision.DISABLE_DEACTIVATION);
     }
 
     @Override
@@ -145,7 +147,6 @@ public class GameClass extends InputAdapter implements ApplicationListener {
 
         groundAngle = (groundAngle + delta * groundSpeed) % 360f;
         instances.get(0).transform.setTranslation(0, MathUtils.sinDeg(groundAngle) * 2.5f, 0f);
-        instances.get(0).body.setWorldTransform(instances.get(0).transform);
 
         dynamicsWorld.stepSimulation(delta, 5, 1f/60f);
 
